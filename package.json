@@ -1,6 +1,6 @@
 {
   "name": "nextjs-memory-profiler",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Memory leak detection and profiling tool for Next.js applications",
   "main": "index.js",
   "scripts": {
