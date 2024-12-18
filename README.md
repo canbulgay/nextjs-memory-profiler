@@ -27,21 +27,13 @@ const profiler = new MemoryProfiler({
 profiler.start();
 
 export function middleware(request) {
-  const start = process.hrtime();
-  const initialMemory = process.memoryUsage();
+  // Route profiling başlat
+  const routeProfiler = profiler.startRouteProfiler(request.nextUrl.pathname);
 
+  // Response tamamlandığında
   request.nextUrl.searchParams.forEach(() => {
-    const diff = process.hrtime(start);
-    const finalMemory = process.memoryUsage();
-
-    const memoryDiff = {
-      heapUsed: Math.round(
-        (finalMemory.heapUsed - initialMemory.heapUsed) / 1024 / 1024
-      ),
-      duration: diff[0] * 1000 + diff[1] / 1000000,
-    };
-
-    profiler.recordRouteMemory(request.nextUrl.pathname, memoryDiff);
+    // Profiling'i sonlandır
+    routeProfiler.end();
   });
 }
 ```
@@ -62,21 +54,12 @@ const profiler = new MemoryProfiler({
 
 export default function Page({ params }) {
   useEffect(() => {
-    const startMemory = process.memoryUsage();
-    const startTime = performance.now();
+    // Route profiling başlat
+    const routeProfiler = profiler.startRouteProfiler(`/pages/${params.slug}`);
 
+    // Component unmount olduğunda profiling'i sonlandır
     return () => {
-      const endMemory = process.memoryUsage();
-      const duration = performance.now() - startTime;
-
-      const memoryDiff = {
-        heapUsed: Math.round(
-          (endMemory.heapUsed - startMemory.heapUsed) / 1024 / 1024
-        ),
-        duration,
-      };
-
-      profiler.recordRouteMemory(`/pages/${params.slug}`, memoryDiff);
+      routeProfiler.end();
     };
   }, [params.slug]);
 
@@ -116,19 +99,6 @@ const profiler = new MemoryProfiler({
 | interval | Ölçüm aralığı (ms) | 5000 |
 | threshold | Memory artış eşiği (MB) | 100 |
 
-## Proje Yapısı
-
-```
-nextjs-memory-profiler/
-├── src/
-│   ├── memoryProfiler.js    # Ana profiler sınıfı
-│   └── middleware.js        # Middleware implementasyonu
-├── examples/
-│   ├── app-router-example.js    # App Router örneği
-│   └── page-component-example.js # Page component örneği
-└── package.json
-```
-
 ## Memory Leak Tespiti
 
 Profiler şu durumlarda uyarı verir:
@@ -147,6 +117,20 @@ Her route için şu metrikler izlenir:
 - İşlem süresi (ms)
 - Memory kullanım trendi
 - Maksimum ve minimum memory kullanımı
+
+## Önemli Notlar
+
+1. **Server-Side Kullanım**:
+   - Bu paket sadece server-side'da çalışır
+   - Client-side'da kullanılırsa uyarı verir ve işlem yapmaz
+
+2. **Otomatik Temizlik**:
+   - Uygulama kapatıldığında (SIGINT/SIGTERM) profiler otomatik olarak durur
+   - Son rapor otomatik olarak oluşturulur
+
+3. **Hata Yönetimi**:
+   - Tüm kritik operasyonlar try-catch ile korunur
+   - Hata durumunda uygun fallback değerler kullanılır
 
 ## Hata Ayıklama
 
