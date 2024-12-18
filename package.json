@@ -1,0 +1,25 @@
+{
+  "name": "nextjs-memory-profiler",
+  "version": "1.0.0",
+  "description": "Memory leak detection and profiling tool for Next.js applications",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "nextjs",
+    "memory-leak",
+    "profiler",
+    "memory-profiler",
+    "debugging",
+    "performance"
+  ],
+  "author": "Can Bulgay",
+  "license": "MIT",
+  "dependencies": {
+    "perf_hooks": "^0.0.1"
+  },
+  "peerDependencies": {
+    "next": ">=12.0.0"
+  }
+}
