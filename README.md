@@ -1,6 +1,6 @@
 # nextjs-memory-profiler
 
-Next.js uygulamalarında memory leak tespiti ve memory profiling için geliştirilmiş bir araç.
+Next.js uygulamalarında memory leak tespiti ve memory profiling için geliştirilmiş bir araç. Edge Runtime ile uyumlu!
 
 ## Kurulum
 
@@ -17,7 +17,7 @@ Next.js uygulamanızda memory leak tespiti için iki farklı yaklaşım kullanab
 `middleware.ts` dosyanızda:
 
 ```javascript
-import MemoryProfiler from 'nextjs-memory-profiler';
+import MemoryProfiler from "nextjs-memory-profiler";
 
 const profiler = new MemoryProfiler({
   threshold: 50, // 50MB üzeri artışlarda uyarı ver
@@ -43,13 +43,13 @@ export function middleware(request) {
 Herhangi bir page component'inizde:
 
 ```javascript
-'use client';
+"use client";
 
-import { useEffect } from 'react';
-import MemoryProfiler from 'nextjs-memory-profiler';
+import { useEffect } from "react";
+import MemoryProfiler from "nextjs-memory-profiler";
 
 const profiler = new MemoryProfiler({
-  threshold: 50
+  threshold: 50,
 });
 
 export default function Page({ params }) {
@@ -71,12 +71,13 @@ export default function Page({ params }) {
 
 Profiler iki tür çıktı üretir:
 
-1. **memory-profile.log**: 
+1. **Console Çıktıları**:
+
    - Anlık uyarılar
    - Memory leak tespitleri
    - Yüksek memory kullanım uyarıları
 
-2. **memory-report.json**:
+2. **Memory Report**:
    - Route bazlı analiz
    - Memory kullanım trendleri
    - Her route için:
@@ -89,21 +90,22 @@ Profiler iki tür çıktı üretir:
 
 ```javascript
 const profiler = new MemoryProfiler({
-  interval: 5000,    // Memory ölçüm aralığı (ms)
-  threshold: 50      // Memory leak uyarı eşiği (MB)
+  interval: 5000, // Memory ölçüm aralığı (ms)
+  threshold: 50, // Memory leak uyarı eşiği (MB)
 });
 ```
 
-| Seçenek | Açıklama | Varsayılan |
-|---------|-----------|------------|
-| interval | Ölçüm aralığı (ms) | 5000 |
-| threshold | Memory artış eşiği (MB) | 100 |
+| Seçenek   | Açıklama                | Varsayılan |
+| --------- | ----------------------- | ---------- |
+| interval  | Ölçüm aralığı (ms)      | 5000       |
+| threshold | Memory artış eşiği (MB) | 100        |
 
 ## Memory Leak Tespiti
 
 Profiler şu durumlarda uyarı verir:
 
 1. **Route Bazlı Memory Leak**:
+
    - Aynı route'a yapılan ardışık isteklerde memory kullanımı eşik değerini aşarsa
 
 2. **Genel Memory Kullanımı**:
@@ -113,6 +115,7 @@ Profiler şu durumlarda uyarı verir:
 ## Performans İzleme
 
 Her route için şu metrikler izlenir:
+
 - Memory kullanımı (MB)
 - İşlem süresi (ms)
 - Memory kullanım trendi
@@ -120,26 +123,31 @@ Her route için şu metrikler izlenir:
 
 ## Önemli Notlar
 
-1. **Server-Side Kullanım**:
-   - Bu paket sadece server-side'da çalışır
-   - Client-side'da kullanılırsa uyarı verir ve işlem yapmaz
+1. **Edge Runtime Uyumluluğu**:
 
-2. **Otomatik Temizlik**:
-   - Uygulama kapatıldığında (SIGINT/SIGTERM) profiler otomatik olarak durur
-   - Son rapor otomatik olarak oluşturulur
+   - Bu paket Edge Runtime ile tam uyumludur
+   - Node.js spesifik API'lar kullanılmaz
+   - Performans API'ları kullanılarak memory ölçümü yapılır
 
-3. **Hata Yönetimi**:
-   - Tüm kritik operasyonlar try-catch ile korunur
-   - Hata durumunda uygun fallback değerler kullanılır
+2. **Çıktı Yönetimi**:
+
+   - Tüm loglar ve raporlar console üzerinden görüntülenir
+   - JSON formatında detaylı raporlar alabilirsiniz
+   - Memory leak tespitinde anlık uyarılar görüntülenir
+
+3. **Hafif ve Hızlı**:
+   - Minimal bağımlılıklar
+   - Düşük overhead
+   - Edge Runtime optimizasyonları
 
 ## Hata Ayıklama
 
 Memory leak tespit edildiğinde:
 
-1. `memory-profile.log` dosyasını kontrol edin
+1. Console uyarılarını kontrol edin
 2. Hangi route'da leak tespit edildiğini belirleyin
 3. İlgili route'un component'lerini ve data fetching logic'ini gözden geçirin
-4. Memory-report.json'daki trend analizini inceleyin
+4. Memory trend raporunu inceleyin
 
 ## Lisans
 

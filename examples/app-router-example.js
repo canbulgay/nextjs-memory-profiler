@@ -1,29 +1,40 @@
 // middleware.ts
+import { NextResponse } from "next/server";
 import MemoryProfiler from "nextjs-memory-profiler";
 
-const profiler = new MemoryProfiler({
-  threshold: 50, // 50MB üzeri artışlarda uyarı ver
-});
-
-// Profiler'ı başlat
-profiler.start();
-
-export function middleware(request) {
-  // Route profiling başlat
-  const routeProfiler = profiler.startRouteProfiler(request.nextUrl.pathname);
-
-  // Response tamamlandığında
-  request.nextUrl.searchParams.forEach(() => {
-    // Profiling'i sonlandır ve sonuçları al
-    const results = routeProfiler.end();
-    
-    // Sonuçlar otomatik olarak kaydedilir ve analiz edilir
-    // Memory leak varsa otomatik olarak uyarı verilir
+// Singleton profiler instance
+let profiler;
+if (!profiler) {
+  profiler = new MemoryProfiler({
+    threshold: 50,
+    interval: 5000,
   });
+  profiler.start();
+  console.log("🔍 Memory Profiler başlatıldı");
 }
 
-// Uygulama kapatıldığında profiler'ı durdur
-process.on("SIGINT", () => {
-  profiler.stop();
-  process.exit();
-});
+export async function middleware(request) {
+  const pathname = request.nextUrl.pathname;
+
+  // Bazı rotaları ignore et
+  if (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/api") ||
+    pathname.includes(".")
+  ) {
+    return NextResponse.next();
+  }
+
+  console.log(`📊 Route profiling başladı: ${pathname}`);
+  const routeProfiler = profiler.startRouteProfiler(pathname);
+
+  // İşlem sonunda profiling'i sonlandır
+  const results = routeProfiler.end();
+  console.log(`
+    🔍 Route Memory Raporu [${pathname}]:
+    - Heap Kullanımı: ${results.heapUsed}MB
+    - İşlem Süresi: ${results.duration}ms
+  `);
+
+  return NextResponse.next();
+}

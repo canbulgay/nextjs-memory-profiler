@@ -1,3 +1,3 @@
-const MemoryProfiler = require('./memoryProfiler');
+const MemoryProfiler = require('./src/memoryProfiler');
 
 module.exports = MemoryProfiler;

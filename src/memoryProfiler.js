@@ -1,7 +1,3 @@
-const v8 = require("v8");
-const fs = require("fs");
-const path = require("path");
-
 class MemoryProfiler {
   constructor(options = {}) {
     this.interval = options.interval || 5000;
@@ -9,135 +5,120 @@ class MemoryProfiler {
     this.samples = [];
     this.routeMemory = new Map();
     this.isRunning = false;
-    this.logFile = path.join(process.cwd(), "memory-profile.log");
-    this.isServer = typeof window === 'undefined';
+    this.startTime = Date.now();
   }
 
-  measureMemory(initialMemory = null) {
-    if (!this.isServer) {
-      console.warn('Memory profiling is only available on the server side');
+  measureMemory() {
+    // Edge Runtime'da performance.memory olmayabilir
+    if (typeof performance === 'undefined' || !performance.memory) {
       return {
         timestamp: new Date().toISOString(),
         heapUsed: 0,
         heapTotal: 0,
-        external: 0,
+        heapLimit: 0
       };
     }
 
-    const currentMemory = process.memoryUsage();
-    
-    if (!initialMemory) {
-      return {
-        timestamp: new Date().toISOString(),
-        heapUsed: Math.round(currentMemory.heapUsed / 1024 / 1024),
-        heapTotal: Math.round(currentMemory.heapTotal / 1024 / 1024),
-        external: Math.round(currentMemory.external / 1024 / 1024),
-      };
-    }
-
+    const memory = performance.memory;
     return {
       timestamp: new Date().toISOString(),
-      heapUsed: Math.round((currentMemory.heapUsed - initialMemory.heapUsed) / 1024 / 1024),
-      heapTotal: Math.round((currentMemory.heapTotal - initialMemory.heapTotal) / 1024 / 1024),
-      external: Math.round((currentMemory.external - initialMemory.external) / 1024 / 1024),
+      heapUsed: Math.round(memory.usedJSHeapSize / 1024 / 1024),
+      heapTotal: Math.round(memory.totalJSHeapSize / 1024 / 1024),
+      heapLimit: Math.round(memory.jsHeapSizeLimit / 1024 / 1024)
     };
   }
 
   startRouteProfiler(route) {
-    if (!this.isServer) {
-      console.warn('Memory profiling is only available on the server side');
-      return {
-        end: () => ({
-          heapUsed: 0,
-          heapTotal: 0,
-          external: 0,
-          duration: 0
-        })
-      };
-    }
-
-    const startTime = process.hrtime();
-    const initialMemory = process.memoryUsage();
+    const startTime = Date.now();
+    const initialMemory = this.measureMemory();
     
     return {
       end: () => {
-        const diff = process.hrtime(startTime);
-        const duration = diff[0] * 1000 + diff[1] / 1000000;
-        const memoryDiff = this.measureMemory(initialMemory);
+        const endTime = Date.now();
+        const finalMemory = this.measureMemory();
+        const duration = endTime - startTime;
         
-        this.recordRouteMemory(route, { ...memoryDiff, duration });
-        return { ...memoryDiff, duration };
+        const memoryDiff = {
+          heapUsed: finalMemory.heapUsed - initialMemory.heapUsed,
+          heapTotal: finalMemory.heapTotal - initialMemory.heapTotal,
+          duration
+        };
+
+        this.recordRouteMemory(route, memoryDiff);
+
+        // Memory leak kontrolü
+        if (memoryDiff.heapUsed > this.threshold) {
+          console.warn(`
+⚠️ Memory Leak Uyarısı [${route}]
+- Memory Artışı: ${memoryDiff.heapUsed}MB
+- Süre: ${duration}ms
+- Toplam Heap: ${finalMemory.heapUsed}MB
+          `);
+        }
+
+        return memoryDiff;
       }
     };
   }
 
   recordRouteMemory(route, memoryDiff) {
-    if (!this.isServer) return;
-
     if (!this.routeMemory.has(route)) {
       this.routeMemory.set(route, []);
     }
 
     const routeStats = this.routeMemory.get(route);
-    routeStats.push({
+    const sample = {
       timestamp: new Date().toISOString(),
-      ...memoryDiff,
-    });
+      ...memoryDiff
+    };
 
+    routeStats.push(sample);
+
+    // Memory leak analizi
     if (routeStats.length > 1) {
       const lastTwo = routeStats.slice(-2);
       const increase = lastTwo[1].heapUsed - lastTwo[0].heapUsed;
 
       if (increase > this.threshold) {
-        const warning = `⚠️ Route Memory Leak Uyarısı [${route}]: ${increase}MB artış tespit edildi`;
-        this.writeLog(warning);
-        console.warn(warning);
+        console.warn(`
+⚠️ Route Memory Leak [${route}]
+- Son iki istek arasındaki artış: ${increase}MB
+- Toplam istek sayısı: ${routeStats.length}
+        `);
       }
     }
   }
 
   start() {
-    if (!this.isServer) {
-      console.warn('Memory profiling is only available on the server side');
-      return;
-    }
-
     if (this.isRunning) return;
     this.isRunning = true;
+    this.startTime = Date.now();
 
-    console.log("Memory profiling başlatıldı...");
-    this.writeLog("Memory profiling başlatıldı");
+    console.log(`
+🚀 Memory Profiler Başlatıldı
+- Ölçüm aralığı: ${this.interval}ms
+- Memory leak eşiği: ${this.threshold}MB
+    `);
 
     this.intervalId = setInterval(() => {
       const memoryStats = this.measureMemory();
-      const heapStats = v8.getHeapStatistics();
-      
-      const sample = {
-        ...memoryStats,
-        heapSizeLimit: Math.round(heapStats.heap_size_limit / 1024 / 1024),
-      };
-
-      this.samples.push(sample);
-      this.analyzeMemory(sample);
+      this.samples.push(memoryStats);
+      this.analyzeMemory(memoryStats);
     }, this.interval);
-
-    // Uygulama kapanırken profiler'ı durdur
-    process.on('SIGINT', () => {
-      this.stop();
-    });
-
-    process.on('SIGTERM', () => {
-      this.stop();
-    });
   }
 
   stop() {
-    if (!this.isServer || !this.isRunning) return;
+    if (!this.isRunning) return;
 
     clearInterval(this.intervalId);
     this.isRunning = false;
-    this.writeLog("Memory profiling durduruldu");
-    console.log("Memory profiling durduruldu");
+    
+    const duration = Date.now() - this.startTime;
+    console.log(`
+⏹️ Memory Profiler Durduruldu
+- Çalışma süresi: ${Math.round(duration / 1000)}s
+- Toplam örnek: ${this.samples.length}
+    `);
 
     this.generateReport();
   }
@@ -149,60 +130,69 @@ class MemoryProfiler {
     const memoryIncrease = sample.heapUsed - previousSample.heapUsed;
 
     if (memoryIncrease > this.threshold) {
-      const warning = `⚠️ Memory Leak Uyarısı: ${memoryIncrease}MB artış tespit edildi`;
-      this.writeLog(warning);
-      console.warn(warning);
+      console.warn(`
+⚠️ Genel Memory Leak Uyarısı
+- Memory Artışı: ${memoryIncrease}MB
+- Toplam Heap: ${sample.heapUsed}MB
+      `);
     }
 
-    const heapUsagePercent = (sample.heapUsed / sample.heapSizeLimit) * 100;
-    if (heapUsagePercent > 80) {
-      const warning = `⚠️ Yüksek Heap Kullanımı: %${heapUsagePercent.toFixed(2)}`;
-      this.writeLog(warning);
-      console.warn(warning);
+    if (sample.heapLimit > 0) {
+      const heapUsagePercent = (sample.heapUsed / sample.heapLimit) * 100;
+      if (heapUsagePercent > 80) {
+        console.warn(`
+⚠️ Yüksek Heap Kullanımı
+- Kullanım: %${heapUsagePercent.toFixed(2)}
+- Heap: ${sample.heapUsed}MB/${sample.heapLimit}MB
+        `);
+      }
     }
   }
 
   generateReport() {
-    if (!this.isServer || this.samples.length === 0) return;
+    if (this.samples.length === 0) return;
 
-    try {
-      const report = {
-        startTime: this.samples[0].timestamp,
-        endTime: this.samples[this.samples.length - 1].timestamp,
-        totalSamples: this.samples.length,
-        memoryTrend: this.calculateMemoryTrend(),
-        maxHeapUsed: Math.max(...this.samples.map((s) => s.heapUsed)),
-        minHeapUsed: Math.min(...this.samples.map((s) => s.heapUsed)),
-        averageHeapUsed: this.calculateAverage(
-          this.samples.map((s) => s.heapUsed)
-        ),
-        routeAnalysis: this.generateRouteReport(),
-      };
+    const report = {
+      startTime: this.samples[0].timestamp,
+      endTime: this.samples[this.samples.length - 1].timestamp,
+      totalSamples: this.samples.length,
+      memoryTrend: this.calculateMemoryTrend(),
+      maxHeapUsed: Math.max(...this.samples.map(s => s.heapUsed)),
+      minHeapUsed: Math.min(...this.samples.map(s => s.heapUsed)),
+      averageHeapUsed: this.calculateAverage(this.samples.map(s => s.heapUsed)),
+      routeAnalysis: this.generateRouteReport()
+    };
 
-      const reportPath = path.join(process.cwd(), "memory-report.json");
-      fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
-      console.log(`Detaylı rapor oluşturuldu: ${reportPath}`);
-    } catch (error) {
-      console.error('Rapor oluşturulurken hata:', error);
-    }
+    console.log(`
+📊 Memory Profiler Raporu
+============================
+- Başlangıç: ${report.startTime}
+- Bitiş: ${report.endTime}
+- Toplam Örnek: ${report.totalSamples}
+- Memory Trendi: ${report.memoryTrend}
+- Max Heap: ${report.maxHeapUsed}MB
+- Min Heap: ${report.minHeapUsed}MB
+- Ortalama Heap: ${report.averageHeapUsed}MB
+
+🛣️ Route Analizi:
+${JSON.stringify(report.routeAnalysis, null, 2)}
+    `);
+
+    return report;
   }
 
   generateRouteReport() {
     const routeReport = {};
 
     for (const [route, samples] of this.routeMemory.entries()) {
-      try {
-        routeReport[route] = {
-          totalRequests: samples.length,
-          averageHeapUsed: this.calculateAverage(samples.map((s) => s.heapUsed)),
-          averageDuration: this.calculateAverage(samples.map((s) => s.duration)),
-          maxHeapUsed: Math.max(...samples.map((s) => s.heapUsed)),
-          minHeapUsed: Math.min(...samples.map((s) => s.heapUsed)),
-          trend: this.calculateRouteTrend(samples),
-        };
-      } catch (error) {
-        console.error(`Route analizi oluşturulurken hata (${route}):`, error);
-      }
+      routeReport[route] = {
+        totalRequests: samples.length,
+        averageHeapUsed: this.calculateAverage(samples.map(s => s.heapUsed)),
+        averageDuration: this.calculateAverage(samples.map(s => s.duration)),
+        maxHeapUsed: Math.max(...samples.map(s => s.heapUsed)),
+        minHeapUsed: Math.min(...samples.map(s => s.heapUsed)),
+        trend: this.calculateRouteTrend(samples)
+      };
     }
 
     return routeReport;
@@ -211,47 +201,25 @@ class MemoryProfiler {
   calculateRouteTrend(samples) {
     if (samples.length < 2) return "Yetersiz veri";
 
-    try {
-      const firstSample = samples[0].heapUsed;
-      const lastSample = samples[samples.length - 1].heapUsed;
-      const trend = ((lastSample - firstSample) / firstSample) * 100;
+    const firstSample = samples[0].heapUsed;
+    const lastSample = samples[samples.length - 1].heapUsed;
+    const trend = ((lastSample - firstSample) / firstSample) * 100;
 
-      return `${trend.toFixed(2)}% ${trend > 0 ? "artış" : "azalış"}`;
-    } catch (error) {
-      console.error('Trend hesaplanırken hata:', error);
-      return "Hesaplanamadı";
-    }
+    return `${trend.toFixed(2)}% ${trend > 0 ? 'artış' : 'azalış'}`;
   }
 
   calculateMemoryTrend() {
     if (this.samples.length < 2) return "Yetersiz veri";
 
-    try {
-      const firstSample = this.samples[0].heapUsed;
-      const lastSample = this.samples[this.samples.length - 1].heapUsed;
-      const trend = ((lastSample - firstSample) / firstSample) * 100;
+    const firstSample = this.samples[0].heapUsed;
+    const lastSample = this.samples[this.samples.length - 1].heapUsed;
+    const trend = ((lastSample - firstSample) / firstSample) * 100;
 
-      return `${trend.toFixed(2)}% ${trend > 0 ? "artış" : "azalış"}`;
-    } catch (error) {
-      console.error('Trend hesaplanırken hata:', error);
-      return "Hesaplanamadı";
-    }
+    return `${trend.toFixed(2)}% ${trend > 0 ? 'artış' : 'azalış'}`;
   }
 
   calculateAverage(numbers) {
-    if (!numbers || numbers.length === 0) return 0;
     return Math.round(numbers.reduce((a, b) => a + b, 0) / numbers.length);
-  }
-
-  writeLog(message) {
-    if (!this.isServer) return;
-    
-    try {
-      const logMessage = `[${new Date().toISOString()}] ${message}\n`;
-      fs.appendFileSync(this.logFile, logMessage);
-    } catch (error) {
-      console.error('Log yazılırken hata:', error);
-    }
   }
 }
 
